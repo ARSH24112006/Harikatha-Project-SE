@@ -1,0 +1,39 @@
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+
+*.md
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+
+# node / frontend build
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# secrets
+.env
+*.env
+!.env.example
+
+# runtime data (generated)
+backend/data/runtime/*
+!backend/data/runtime/.gitkeep
+
+# audio binaries
+backend/sounds/*.mp3
+backend/sounds/*.wav
+*.onnx
