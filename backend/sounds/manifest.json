@@ -1,1 +1,107 @@
-{}
+{
+  "_note": "Files are 128 kbps Freesound previews (full-quality originals need a Freesound login). Recorded by script on 2026-11-14. sa_hz is the lowest Sa string, measured by FFT peak picking (about +/-1 Hz); Pa found at 1.5x in each. Octave-equivalent: shift the voice by semitones to match. Files marked requires_attribution need the credit shown in the app or its docs. Run fetch_sounds.sh to re-download the (git-ignored) mp3s.",
+  "tanpura_cs3_cc0.mp3": {
+    "kind": "tanpura",
+    "sa_hz": 138.4,
+    "title": "Tanpura 10",
+    "author": "sankalp",
+    "source": "https://freesound.org/s/153262/",
+    "preview_url": "https://cdn.freesound.org/previews/153/153262_1859932-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 132.8
+  },
+  "tanpura_cs3_acoustic.mp3": {
+    "kind": "tanpura",
+    "sa_hz": 138.7,
+    "title": "Acoustic Tanpura 4",
+    "author": "sankalp",
+    "source": "https://freesound.org/s/153263/",
+    "preview_url": "https://cdn.freesound.org/previews/153/153263_1859932-hq.mp3",
+    "licence": "CC BY 4.0",
+    "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+    "requires_attribution": true,
+    "duration_sec": 38.5
+  },
+  "tanpura_as2_acoustic.mp3": {
+    "kind": "tanpura",
+    "sa_hz": 117.9,
+    "title": "Acoustic Tanpura 10",
+    "author": "sankalp",
+    "source": "https://freesound.org/s/155272/",
+    "preview_url": "https://cdn.freesound.org/previews/155/155272_1859932-hq.mp3",
+    "licence": "CC BY 4.0",
+    "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+    "requires_attribution": true,
+    "duration_sec": 47.5
+  },
+  "bell_hindu_temple.mp3": {
+    "kind": "bell",
+    "title": "Bells at a Hindu temple 3",
+    "author": "barryshamir",
+    "source": "https://freesound.org/s/876449/",
+    "preview_url": "https://cdn.freesound.org/previews/876/876449_14047045-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 23.9
+  },
+  "bell_indian_temple.mp3": {
+    "kind": "bell",
+    "title": "Indian Temple Bell.WAV",
+    "author": "ganiket",
+    "source": "https://freesound.org/s/466652/",
+    "preview_url": "https://cdn.freesound.org/previews/466/466652_9226170-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 30.5
+  },
+  "bell_shiva.mp3": {
+    "kind": "bell",
+    "title": "Shiva Bells.wav",
+    "author": "grololo",
+    "source": "https://freesound.org/s/34870/",
+    "preview_url": "https://cdn.freesound.org/previews/34/34870_311859-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 30.0
+  },
+  "cymbals_finger_1.mp3": {
+    "kind": "cymbals",
+    "note": "finger cymbals, a stand-in for jalra/manjira (no Indian jalra found under CC0)",
+    "title": "Finger Cymbals.wav",
+    "author": "MirkoMeter84",
+    "source": "https://freesound.org/s/175932/",
+    "preview_url": "https://cdn.freesound.org/previews/175/175932_3266433-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 2.1
+  },
+  "cymbals_finger_2.mp3": {
+    "kind": "cymbals",
+    "note": "finger cymbals, a stand-in for jalra/manjira (no Indian jalra found under CC0)",
+    "title": "Finger cymbals.WAV",
+    "author": "Luc Henrion",
+    "source": "https://freesound.org/s/439616/",
+    "preview_url": "https://cdn.freesound.org/previews/439/439616_737466-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 14.5
+  },
+  "scene_varanasi_ghat_evening.mp3": {
+    "kind": "scene",
+    "title": "Evening Soundscape of Varanasi Ghat",
+    "author": "Calcuttan",
+    "source": "https://freesound.org/s/251283/",
+    "preview_url": "https://cdn.freesound.org/previews/251/251283_2474372-hq.mp3",
+    "licence": "CC0 1.0",
+    "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "requires_attribution": false,
+    "duration_sec": 96.4
+  }
+}

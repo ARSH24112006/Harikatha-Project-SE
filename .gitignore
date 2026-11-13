@@ -37,3 +37,15 @@ backend/data/runtime/*
 backend/sounds/*.mp3
 backend/sounds/*.wav
 *.onnx
+
+# scratch notes
+temp
+
+# audio, anywhere in the repo (sound beds are re-fetched by backend/sounds/fetch_sounds.sh)
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.opus
+*.m4a
+*.aac
