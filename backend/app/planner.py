@@ -3,7 +3,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import calibration, llm, store
+from . import calibration, languages, llm, sarvam, store
 from .config import settings
 from .schemas import (
     Critique,
@@ -113,8 +113,10 @@ def write_section(
     offered_lines = "\n".join(
         f"- id={i}: {corpus[i].get('title', '')} :: {corpus[i]['text'][:160]}" for i in offered
     ) or "(none)"
+    lang = languages.name(req.language)
     prompt = (
-        f"Language: {req.language} (write in the native script of this language)\n"
+        f"Write the spoken text in {lang}. The story and events below may be in another language: "
+        f"retell them in {lang}, do not copy their wording.\n"
         f"Story: {req.title}\nDeity: {analysis.deity}; bhava: {analysis.bhava}; moral: {analysis.moral}\n"
         f"Characters: {', '.join(analysis.characters) or 'n/a'}\n"
         f"Section: {b.section} ({b.kind})\nEvents to cover in this section: "
@@ -130,6 +132,9 @@ def write_section(
                 raise ValueError(f"slot {i}: source_id {slot.source_id!r} was not offered")
             if not slot.source_id and not slot.text.strip():
                 raise ValueError(f"slot {i}: empty text")
+            if not slot.source_id and (why := languages.problem(slot.text, req.language)):
+                err = llm.SoftCheck if "Marathi" in why else ValueError  # wrong script is fatal, drift is not
+                raise err(f"slot {i}: {why}")
             if not slot.source_id and len(slot.text) > want.target_chars * 1.25 + 20:
                 raise llm.SoftCheck(f"slot {i}: {len(slot.text)} chars, limit is about {want.target_chars}")
 
@@ -142,7 +147,8 @@ def write_section(
     return llm.complete_json(
         pid=pid, stage=f"write:{b.section}", prompt=prompt, model=SectionOutput, mock_fn=mock,
         check=check, reasoning_effort=settings.writing_reasoning_effort,
-        system=_PERSONA + " Fill each slot in order. 'shloka' slots: a short devotional invocation or "
+        system=_PERSONA + f" ALWAYS write in {lang}, in its own script, whatever language the story "
+        f"is told in; keep names of people and places but transliterate them. Fill each slot in order. 'shloka' slots: a short devotional invocation or "
         "benediction. 'narration' slots: spoken storytelling that follows the events. 'song' slots: a "
         "short devotional verse. NEVER quote scripture or classical songs from memory and never claim "
         "a line comes from a scripture or composer. To use a traditional text, set that slot's "
@@ -170,14 +176,18 @@ def assemble(b: SectionBudget, out: SectionOutput, corpus: dict[str, dict]) -> l
 
 def critique(pid: str, script: Script, analysis: StoryAnalysis) -> Critique:
     lines = "\n".join(f"[{s.id}] ({s.type}, {s.origin}) {s.text}" for s in script.segments)
+    lang = languages.name(script.language)
     prompt = (
-        f"Deity: {analysis.deity}; events: {'; '.join(analysis.events)}\n\nScript:\n{lines}"
+        f"Expected language: {lang}\nDeity: {analysis.deity}; events: {'; '.join(analysis.events)}"
+        f"\n\nScript:\n{lines}"
     )
     return llm.complete_json(
         pid=pid, stage="critique", prompt=prompt, model=Critique, mock_fn=lambda: Critique(ok=True),
+        reasoning_effort=settings.critique_reasoning_effort,
         system="You review a Harikatha script. Flag only real problems: text that claims to quote a "
                "scripture or composer (likely invented), facts that contradict the listed events or "
-               "deity, text in the wrong language, or incoherent lines. Segments with origin "
+               "deity, text not in the expected language (for Hindi: also flag Marathi or other "
+               "languages that share the script), or incoherent lines. Segments with origin "
                "'traditional' are verified: never flag them. For each problem give the segment_id, "
                "the problem and a fix_instruction. Set ok=true and issues=[] if nothing is wrong.",
     )
@@ -185,13 +195,16 @@ def critique(pid: str, script: Script, analysis: StoryAnalysis) -> Critique:
 
 def rewrite_segment(pid: str, seg: dict, instruction: str, max_chars: int, language: str) -> str:
     """Rewrite one original segment. Falls back to a hard trim if the model won't comply."""
-    prompt = f"Language: {language}\nInstruction: {instruction}\nMaximum {max_chars} characters.\nText:\n{seg['text']}"
+    lang = languages.name(language)
+    prompt = f"Write in {lang}.\nInstruction: {instruction}\nMaximum {max_chars} characters.\nText:\n{seg['text']}"
 
     def check(out: RewriteOutput) -> None:
         if not out.text.strip():
             raise ValueError("empty text")
         if len(out.text) > max_chars * 1.1:
             raise ValueError(f"{len(out.text)} chars, maximum is {max_chars}")
+        if why := languages.problem(out.text, language):
+            raise ValueError(why)
 
     def mock() -> RewriteOutput:
         return RewriteOutput(text=trim(seg["text"], max_chars))
@@ -200,8 +213,8 @@ def rewrite_segment(pid: str, seg: dict, instruction: str, max_chars: int, langu
         return llm.complete_json(
             pid=pid, stage=f"rewrite:{seg['id']}", prompt=prompt, model=RewriteOutput, mock_fn=mock,
             check=check, reasoning_effort=settings.writing_reasoning_effort,
-            system=_PERSONA + " Rewrite the text as instructed, keeping its meaning, "
-            "language and devotional tone. Do not add scripture quotations.",
+            system=_PERSONA + f" Rewrite the text as instructed, keeping its meaning, in {lang} "
+            "and its devotional tone. Do not add scripture quotations.",
         ).text.strip()
     except llm.LLMError:
         return trim(seg["text"], max_chars)
@@ -287,9 +300,16 @@ def run_script_job(pid: str) -> None:
         store.write_stage(pid, "03_retrieval.json", retrieval)
 
         store.write_status(pid, "writing", "critique", progress=0.85)
-        verdict = critique(pid, script, analysis)
+        try:
+            verdict = critique(pid, script, analysis)
+        except (llm.LLMError, sarvam.SarvamError) as e:  # a quality pass must not lose the script
+            verdict, skipped = Critique(ok=True), f"{type(e).__name__}: {e}"
+        else:
+            skipped = None
         fixes = apply_fixes(pid, script, verdict, cps)
-        store.write_stage(pid, "05_critique.json", {**verdict.model_dump(), "fixes": fixes})
+        store.write_stage(pid, "05_critique.json", {
+            **verdict.model_dump(), "fixes": fixes, **({"skipped": skipped} if skipped else {}),
+        })
         lap("critique")
 
         reason = "initial + critique" if not any(f["applied"] for f in fixes) else "initial + critique fixes"

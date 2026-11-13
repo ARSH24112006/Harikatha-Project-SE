@@ -209,3 +209,68 @@ def test_calibration_smooths_and_keys_by_mode(tmp_path, monkeypatch):
     assert calibration.get("en-IN") == calibration.FALLBACK_CPS
 
 
+
+
+# --- language handling ---------------------------------------------------------
+
+def test_language_problem_detects_english_and_marathi_drift():
+    from app import languages
+
+    hindi = "आइए प्यारे श्रोताओ, आज हम हरि की कथा गाएंगे।"
+    assert languages.problem(hindi, "hi-IN") is None
+    assert languages.problem("Let us hear the story of Hari today", "hi-IN") is not None
+    assert languages.problem("एकदा गजेंद्र नावाचा हत्ती तलावात खेळत होता", "hi-IN") == (
+        "this looks like Marathi, not Hindi; use Hindi vocabulary and grammar")
+    assert languages.problem("Let us hear the story of Hari today", "en-IN") is None
+    assert languages.problem("Om", "hi-IN") is None  # too short to judge
+    assert languages.problem("சொல்லுவோம் ஹரியின் கதையை இன்று", "ta-IN") is None
+    assert languages.name("hi-IN") == "Hindi"
+
+
+def _hindi_setup():
+    from app.schemas import GenerateRequest
+
+    analysis = StoryAnalysis(characters=[], events=["An elephant is caught."], deity="Vishnu", bhava="b", moral="m")
+    return GenerateRequest(title="t", story="s", language="hi-IN"), analysis
+
+
+def test_english_output_for_hindi_is_retried_with_feedback_then_accepted(live):
+    english = json.dumps({"slots": [{"text": "Let us hear the story of the great elephant today"},
+                                    {"text": "He cried out to the Lord for help and was saved"}]})
+    hindi = json.dumps({"slots": [{"text": "आइए आज हम महान हाथी की कथा सुनें और भक्ति करें"},
+                                  {"text": "उसने प्रभु को पुकारा और प्रभु ने उसे बचा लिया हे"}]})
+    replies = iter([english, hindi])
+    reqs = live(lambda r: _chat_reply(next(replies)))
+    req, analysis = _hindi_setup()
+    out = planner.write_section("p", req, analysis, _budget(), [], {})
+    assert out.slots[0].text.startswith("आइए")
+    first = json.loads(reqs[0].content)["messages"]
+    assert "Hindi" in first[0]["content"] and "retell them in Hindi" in first[1]["content"]
+    assert "mostly Latin letters" in json.loads(reqs[1].content)["messages"][-1]["content"]
+
+
+def test_marathi_drift_gets_one_retry_and_is_not_fatal(live):
+    marathi = json.dumps({"slots": [{"text": "एकदा गजेंद्र नावाचा हत्ती तलावात खेळत होता तेव्हा"},
+                                    {"text": "प्रभूने त्याला वाचवले आहे आणि तो खूप आनंदी झाला"}]})
+    reqs = live(lambda r: _chat_reply(marathi))
+    req, analysis = _hindi_setup()
+    out = planner.write_section("p", req, analysis, _budget(), [], {})
+    assert len(reqs) == 2 and out.slots[0].text.startswith("एकदा")  # kept: a human can still fix it in the editor
+
+
+def test_critique_failure_does_not_lose_the_script(tmp_path, monkeypatch):
+    from app import planner as pl
+    from app import store
+    from app.schemas import GenerateRequest
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+    def boom(*a, **k):
+        raise llm.LLMError("response truncated by max_tokens")
+
+    monkeypatch.setattr(pl, "critique", boom)
+    pid = store.create(GenerateRequest(title="t", story="An elephant is caught. Vishnu saves him."))
+    pl.run_script_job(pid)
+    assert store.read(pid, "status.json")["stage"] == "scripted"
+    stage = store.read(pid, "stages/05_critique.json")
+    assert stage["ok"] is True and "truncated" in stage["skipped"]

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     llm_model: str = "sarvam-105b"
     reasoning_effort: str = "low"  # analyse + critique
+    critique_reasoning_effort: str = "none"  # "low" ran out of tokens on long Devanagari scripts
     writing_reasoning_effort: str = "none"  # write + rewrite: "low" burned ~4.7k tokens per slot
     llm_temperature: float = 0.5
     llm_max_tokens: int = 6000  # reasoning tokens share this budget
@@ -35,6 +36,7 @@ class Settings(BaseSettings):
             "llm_model": self.llm_model,
             "reasoning_effort": self.reasoning_effort,
             "writing_reasoning_effort": self.writing_reasoning_effort,
+            "critique_reasoning_effort": self.critique_reasoning_effort,
             "tts_model": self.tts_model,
             "tts_speaker": self.tts_speaker,
             "tts_sample_rate": self.tts_sample_rate,
