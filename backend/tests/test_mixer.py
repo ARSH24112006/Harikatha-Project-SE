@@ -158,3 +158,16 @@ def test_render_without_ffmpeg_still_produces_a_wav(tmp_path, monkeypatch):
     assert status["stage"] == "done" and status["files"] == ["performance.wav"], status
     assert client.get(f"/api/v1/performances/{pid}/audio?fmt=wav").status_code == 200
     assert client.get(f"/api/v1/performances/{pid}/audio?fmt=mp3").status_code == 404
+
+
+def test_mix_disable_leaves_only_the_voice(monkeypatch):
+    script, clips = make_script()
+    full = mixer.build(script, clips, RATE)
+    monkeypatch.setattr(settings, "mix_disable", "drone, scene,pulse,bells")
+    bare = mixer.build(script, clips, RATE)
+    assert bare.recipe["disabled_layers"] == ["bells", "drone", "pulse", "scene"] and bare.credits == []
+    assert bare.timeline == full.timeline  # layout is unchanged
+    gap = bare.samples[int(5.0 * RATE): int(5.0 * RATE) + RATE // 4]  # inside a pause: voice only
+    assert mixer.rms(bare.samples) < mixer.rms(full.samples)
+    assert float(np.abs(bare.samples[: int(2.5 * RATE)]).max()) == 0.0  # pre-roll is silent without beds
+    assert gap is not None

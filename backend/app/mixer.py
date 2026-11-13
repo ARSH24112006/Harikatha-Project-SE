@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import sounds
+from .config import settings
 
 PRE_ROLL = 3.0  # drone and opening bell before the first word
 POST_ROLL = 5.0  # closing bell rings out over a fading drone
@@ -22,7 +23,7 @@ TRIM_DB = -45  # silence threshold relative to the clip's peak
 TRIM_MARGIN = 0.02
 
 # Bed levels in dB relative to the voice's RMS.
-DRONE_OPEN, DRONE_SPEECH, DRONE_SONG = -16, -26, -20
+DRONE_OPEN, DRONE_SPEECH, DRONE_SONG = -30, -40, -40
 SCENE_DB = -30
 PULSE_DB, BELL_MAIN_DB, BELL_SOFT_DB = -20, -10, -20
 TEMPO_BPM = 88
@@ -148,6 +149,7 @@ def _credit(bed: sounds.Bed) -> dict | None:
 
 
 def build(script: dict, clips: dict[str, np.ndarray], rate: int) -> Mix:
+    off = {x.strip() for x in settings.mix_disable.split(",") if x.strip()}  # MIX_DISABLE, for tuning by ear
     segs = script["segments"]
     trimmed = {s["id"]: trim_silence(clips[s["id"]], rate) for s in segs}
 
@@ -193,11 +195,12 @@ def build(script: dict, clips: dict[str, np.ndarray], rate: int) -> Mix:
     drone_env = np.interp(audio_t, env_t, smooth(10 ** (target_db / 20)))
     drone_env *= np.clip(audio_t / (PRE_ROLL - 1.0), 0, 1)  # fade in before the first word
     drone_env *= np.clip((total - audio_t) / 4.0, 0, 1)  # fade out over the last 4 s
-    mix = voice + drone_bed * drone_env
+    mix = voice + (0 if "drone" in off else drone_bed * drone_env)
 
     # 4. scene bed over the nirupana sections, crossfaded in and out
     scene = sounds.scene(rate)
     nir = [(st, en) for s, st, en in spans if s["section"].startswith("nirupana")]
+    scene = None if "scene" in off else scene
     if scene is not None and nir:
         bed = tile_to(make_loop(scene.samples, rate), n)
         bed = bed * (voice_rms * db(SCENE_DB) / (rms(bed) or 1))
@@ -212,7 +215,7 @@ def build(script: dict, clips: dict[str, np.ndarray], rate: int) -> Mix:
     hit *= voice_rms * db(PULSE_DB) / (rms(hit[: rate]) or 1)
     beat = 60 / TEMPO_BPM
     for s, start, end in spans:
-        if s["type"] != "song":
+        if s["type"] != "song" or "pulse" in off:
             continue
         count = int((end - start) / beat)
         for j in range(count):
@@ -233,12 +236,14 @@ def build(script: dict, clips: dict[str, np.ndarray], rate: int) -> Mix:
             seen.add(s["section"])
             events.append((start - PAUSE["section"] / 2, BELL_SOFT_DB))
     events.append((spans[-1][2] + 0.5, BELL_MAIN_DB))
-    for t, level in events:
+    for t, level in [] if "bells" in off else events:
         i = max(0, int(t * rate))
         seg = bell_s[: max(0, n - i)]
         mix[i: i + len(seg)] += seg * db(level)
 
-    used = [drone] + ([scene] if scene is not None and nir else []) + [bell, cymbal]
+    has_song = any(s["type"] == "song" for s in segs)
+    used = (([] if "drone" in off else [drone]) + ([scene] if scene is not None and nir else [])
+            + ([] if "bells" in off else [bell]) + ([] if "pulse" in off or not has_song else [cymbal]))
     credits = [c for c in map(_credit, used) if c]
     recipe = {
         "pre_roll_sec": PRE_ROLL, "post_roll_sec": POST_ROLL, "pauses_sec": PAUSE,
@@ -249,7 +254,7 @@ def build(script: dict, clips: dict[str, np.ndarray], rate: int) -> Mix:
         "tempo_bpm": TEMPO_BPM, "bells_at_sec": [[round(t, 2), lv] for t, lv in events],
         "levels_db_rel_voice": {"drone_open": DRONE_OPEN, "drone_speech": DRONE_SPEECH,
                                 "drone_song": DRONE_SONG, "scene": SCENE_DB, "pulse": PULSE_DB},
-        "voice_start_sec": round(spans[0][1], 3),
+        "voice_start_sec": round(spans[0][1], 3), "disabled_layers": sorted(off),
     }
     timeline = [{"id": s["id"], "start": round(st, 3), "end": round(en, 3)} for s, st, en in spans]
     return Mix(mix.astype(np.float32), timeline, recipe, credits)

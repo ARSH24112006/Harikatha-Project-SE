@@ -45,6 +45,7 @@ def get_performance(pid: str):
         "script": store.read(pid, "script.json"),
         "timeline": store.read(pid, "timeline.json"),
         "credits": store.read(pid, "credits.json") or [],
+        "mock": ((store.read(pid, "meta.json") or {}).get("settings") or {}).get("mock", False),
         "status": store.read(pid, "status.json"),
     }
 

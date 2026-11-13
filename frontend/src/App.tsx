@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   createPerformance,
   editSegment,
+  getHealth,
   getPerformance,
   render,
   type GenerateRequest,
@@ -27,9 +28,14 @@ export default function App() {
   const [perf, setPerf] = useState<Performance | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverMock, setServerMock] = useState(false);
 
   const fail = (e: unknown) => setError(String(e));
   const refresh = useCallback((pid: string) => getPerformance(pid).then(setPerf).catch(fail), []);
+
+  useEffect(() => {
+    getHealth().then((h) => setServerMock(h.mock)).catch(fail);
+  }, []);
 
   useEffect(() => {
     if (id) refresh(id);
@@ -59,6 +65,12 @@ export default function App() {
   return (
     <main>
       <h1>Harikatha</h1>
+      {serverMock && (
+        <p className="warn">
+          Mock mode: the server uses placeholder text and a synthetic tone instead of Sarvam. Set MOCK_SARVAM=false in .env
+          and restart.
+        </p>
+      )}
       <GenerateForm busy={running} onSubmit={onGenerate} />
       {error && <p className="error">{error}</p>}
 
@@ -71,6 +83,7 @@ export default function App() {
             {perf.status.progress !== null && RUNNING.has(perf.status.stage) && (
               <progress value={perf.status.progress} max={1} />
             )}
+            {perf.mock && <p className="warn">This performance was made in mock mode (placeholder audio).</p>}
             {perf.status.stage === "error" && <p className="error">{perf.status.detail}</p>}
             {perf.script && (
               <div className="row">

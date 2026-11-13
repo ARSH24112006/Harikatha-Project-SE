@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     tts_speaker: str = "shubh"
     tts_sample_rate: int = 24000
     overrun_threshold: float = 0.2
+    mix_disable: str = ""  # comma list of layers to leave out: drone,scene,pulse,bells
 
     request_timeout_sec: float = 120.0
     max_retries: int = 3

@@ -8,7 +8,6 @@
 
 {
   # https://devenv.sh/basics/
-  env.MOCK_SARVAM = "true";
   env.DATA_DIR = "${config.devenv.root}/backend/data";
   # numpy's manylinux wheels need these shared libraries, which nix does not put on the default path
   env.LD_LIBRARY_PATH = lib.makeLibraryPath [

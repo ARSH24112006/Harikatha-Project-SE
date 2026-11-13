@@ -38,6 +38,7 @@ export type Performance = {
   script: Script | null;
   timeline: Timeline | null;
   credits: Credit[];
+  mock: boolean;
   status: Status;
 };
 
@@ -71,6 +72,8 @@ export const createPerformance = (req: GenerateRequest) =>
 
 export const getPerformance = (id: string) =>
   fetch(`${BASE}/performances/${id}`).then((r) => json<Performance>(r));
+
+export const getHealth = () => fetch(`${BASE}/health`).then((r) => json<{ ok: boolean; mock: boolean }>(r));
 
 export const render = (id: string) => send("POST", `/performances/${id}/render`).then((r) => json<Status>(r));
 

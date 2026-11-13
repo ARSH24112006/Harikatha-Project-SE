@@ -25,6 +25,10 @@ class LLMError(RuntimeError):
     """The model answered, but never with output that passed validation."""
 
 
+class SoftCheck(ValueError):
+    """A check() failure worth one retry, but not worth failing the job: the last answer is kept."""
+
+
 def calls_for(pid: str) -> int:
     return _calls[pid]
 
@@ -65,7 +69,8 @@ def complete_json[T: BaseModel](
     *, pid: str, stage: str, prompt: str, model: type[T], mock_fn: Callable[[], T],
     system: str = "", check: Callable[[T], None] | None = None, reasoning_effort: str | None = None,
 ) -> T:
-    """check() may raise ValueError to reject semantically bad output (triggers the retry)."""
+    """check() may raise ValueError to reject bad output (triggers the retry). Raising SoftCheck
+    instead means the final attempt is accepted anyway, for problems a later stage can fix."""
     mock = settings.mock_sarvam
     schema = json.dumps(model.model_json_schema())
     messages = [
@@ -77,7 +82,7 @@ def complete_json[T: BaseModel](
     last_error = ""
     for attempt in range(MAX_ATTEMPTS):
         start = time.monotonic()
-        ok, response, usage = False, "", {}
+        ok, response, usage, result = False, "", {}, None
         try:
             if mock:
                 result = model.model_validate(mock_fn())
@@ -93,6 +98,8 @@ def complete_json[T: BaseModel](
             last_error = str(e)[:500]
             if mock:
                 raise
+            if isinstance(e, SoftCheck) and attempt == MAX_ATTEMPTS - 1 and result is not None:
+                return result
             messages += [
                 {"role": "assistant", "content": response},
                 {"role": "user", "content": f"That was invalid: {last_error}\nReturn corrected JSON only."},

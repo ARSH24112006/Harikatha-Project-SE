@@ -131,7 +131,7 @@ def write_section(
             if not slot.source_id and not slot.text.strip():
                 raise ValueError(f"slot {i}: empty text")
             if not slot.source_id and len(slot.text) > want.target_chars * 1.25 + 20:
-                raise ValueError(f"slot {i}: {len(slot.text)} chars, limit is about {want.target_chars}")
+                raise llm.SoftCheck(f"slot {i}: {len(slot.text)} chars, limit is about {want.target_chars}")
 
     def mock() -> SectionOutput:
         return SectionOutput(slots=[

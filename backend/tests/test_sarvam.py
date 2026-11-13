@@ -155,17 +155,19 @@ def test_write_section_uses_corpus_verbatim_and_rejects_unoffered_ids(live, tmp_
     assert json.loads(reqs[0].content)["reasoning_effort"] is None  # writing skips reasoning
 
 
-def test_write_section_rejects_wrong_slot_count_and_overlong_text(live):
+def test_write_section_overlong_text_is_kept_after_one_retry_but_wrong_slot_count_fails(live):
     from app.schemas import GenerateRequest
 
-    replies = iter([
-        json.dumps({"slots": [{"text": "only one"}]}),
-        json.dumps({"slots": [{"text": "x" * 900}, {"text": "ok"}]}),
-    ])
-    live(lambda r: _chat_reply(next(replies)))
     analysis = StoryAnalysis(characters=[], events=["e"], deity="d", bhava="b", moral="m")
-    with pytest.raises(llm.LLMError, match="limit is about"):
-        planner.write_section("p", GenerateRequest(title="t", story="s"), analysis, _budget(), [], {})
+    req = GenerateRequest(title="t", story="s")
+    long_reply = json.dumps({"slots": [{"text": "x" * 900}, {"text": "ok"}]})
+    reqs = live(lambda r: _chat_reply(long_reply))
+    out = planner.write_section("p", req, analysis, _budget(), [], {})
+    assert len(reqs) == 2 and len(out.slots[0].text) == 900  # one retry, then accepted: the fit loop shortens it
+
+    live(lambda r: _chat_reply(json.dumps({"slots": [{"text": "only one"}]})))
+    with pytest.raises(llm.LLMError, match="expected 2 slots"):
+        planner.write_section("p", req, analysis, _budget(), [], {})
 
 
 def test_critique_fixes_touch_only_original_segments(live):
