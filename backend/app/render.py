@@ -7,22 +7,23 @@ import shutil
 import subprocess
 import time
 from array import array
+from concurrent.futures import ThreadPoolExecutor
 
-from . import audio, store, tts
+from . import audio, calibration, planner, store, tts
 from .config import settings
 
 MAX_FIT_ROUNDS = 2
 GAP_SEC = 0.35
 
 
-def _synth_all(pid: str, script: dict) -> tuple[dict[str, array], int]:
-    clips, hits = {}, 0
-    for seg in script["segments"]:
-        clips[seg["id"]], hit = tts.synthesize(
-            seg["text"], script["language"], seg["delivery"]["pace"]
-        )
-        hits += hit
-    return clips, hits
+def _synth_all(script: dict) -> tuple[dict[str, array], int]:
+    segs = script["segments"]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(
+            lambda seg: tts.synthesize(seg["text"], script["language"], seg["delivery"]["pace"]), segs
+        ))
+    clips = {seg["id"]: samples for seg, (samples, _) in zip(segs, results, strict=True)}
+    return clips, sum(hit for _, hit in results)
 
 
 def _overruns(script: dict, clips: dict[str, array]) -> list[dict]:
@@ -32,12 +33,6 @@ def _overruns(script: dict, clips: dict[str, array]) -> list[dict]:
          "overrun": audio.duration(clips[s["id"]], rate) / s["target_sec"] - 1}
         for s in script["segments"]
     ]
-
-
-def _shorten(seg: dict, row: dict) -> None:
-    """Placeholder for the LLM rewrite: trim text in proportion to the overrun."""
-    keep = max(10, int(len(seg["text"]) * row["budget_sec"] / row["actual_sec"]))
-    seg["text"] = seg["text"][:keep].rstrip()
 
 
 def run_render_job(pid: str) -> None:
@@ -56,9 +51,15 @@ def run_render_job(pid: str) -> None:
         cache_hits = 0
 
         store.write_status(pid, "synthesizing", progress=0.1)
-        clips, hits = _synth_all(pid, script)
+        clips, hits = _synth_all(script)
         cache_hits += hits
         lap("tts")
+        # Learn real speaking speed from the first pass (before any rewrite changes the text).
+        calibration.update(
+            script["language"], sum(len(s["text"]) for s in script["segments"]),
+            sum(audio.duration(c, rate) for c in clips.values()),
+        )
+        cps = calibration.get(script["language"])
 
         for rnd in range(1, MAX_FIT_ROUNDS + 1):
             rows = _overruns(script, clips)
@@ -68,14 +69,19 @@ def run_render_job(pid: str) -> None:
             store.write_status(pid, "rewriting", f"round {rnd}: {len(late)} segments", progress=0.35)
             by_id = {s["id"]: s for s in script["segments"]}
             for r in late:
-                _shorten(by_id[r["id"]], r)
+                seg = by_id[r["id"]]
+                limit = round(seg["target_sec"] * cps * 0.95)  # aim just under budget
+                seg["text"] = planner.rewrite_segment(
+                    pid, seg, f"Shorten to fit the time budget ({seg['target_sec']:.0f}s of speech).",
+                    limit, script["language"],
+                )
             v = store.save_script(
                 pid, script, f"fit round {rnd}: shortened {', '.join(r['id'] for r in late)}"
             )
             store.write_stage(pid, f"07_fit_round{rnd}.json", {
                 "script_version": v, "segments": rows, "shortened": [r["id"] for r in late],
             })
-            clips, hits = _synth_all(pid, script)
+            clips, hits = _synth_all(script)
             cache_hits += hits
             lap("fit")
 

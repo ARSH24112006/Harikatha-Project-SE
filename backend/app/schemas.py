@@ -2,11 +2,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+LanguageCode = Literal[
+    "bn-IN", "en-IN", "gu-IN", "hi-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN", "pa-IN", "ta-IN", "te-IN"
+]  # Bulbul's supported codes
+
 
 class GenerateRequest(BaseModel):
     title: str
     story: str
-    language: str = "en-IN"
+    language: LanguageCode = "en-IN"
     duration_minutes: int = Field(default=8, ge=1, le=60)
     audience: str = "general"
 
@@ -67,9 +71,19 @@ class Script(BaseModel):
     content_notes: str = ""
 
 
-class SectionDraft(BaseModel):
-    section: str
-    segments: list[Segment]
+class SlotText(BaseModel):
+    text: str = ""
+    source_id: str | None = None  # corpus record to use verbatim instead of `text`
+
+
+class SectionOutput(BaseModel):
+    """Raw LLM output for one section, before assembly into Segments."""
+
+    slots: list[SlotText]
+
+
+class RewriteOutput(BaseModel):
+    text: str
 
 
 class CritiqueIssue(BaseModel):
