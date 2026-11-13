@@ -1,65 +1,108 @@
-import { useEffect, useState } from "react";
-import { createPerformance, getStatus, render, type Status } from "./api";
+import { useCallback, useEffect, useState } from "react";
+import {
+  createPerformance,
+  editSegment,
+  getPerformance,
+  render,
+  type GenerateRequest,
+  type Performance,
+} from "./api";
+import GenerateForm from "./GenerateForm";
+import Player from "./Player";
+import RatingForm from "./RatingForm";
+import ScriptView from "./ScriptView";
+
+const RUNNING = new Set(["analysing", "planning", "writing", "queued", "synthesizing", "rewriting", "modulating", "mixing"]);
+
+function saveJson(name: string, data: unknown) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  a.download = `${name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 export default function App() {
-  const [title, setTitle] = useState("");
-  const [story, setStory] = useState("");
-  const [language, setLanguage] = useState("en-IN");
-  const [minutes, setMinutes] = useState(8);
-  const [id, setId] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);
+  const [id, setId] = useState<string | null>(location.hash.slice(1) || null);
+  const [perf, setPerf] = useState<Performance | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll status until the performance is done or errored.
-  useEffect(() => {
-    if (!id || status?.stage === "done" || status?.stage === "error") return;
-    const t = setInterval(() => getStatus(id).then(setStatus).catch((e) => setError(String(e))), 2000);
-    return () => clearInterval(t);
-  }, [id, status?.stage]);
+  const fail = (e: unknown) => setError(String(e));
+  const refresh = useCallback((pid: string) => getPerformance(pid).then(setPerf).catch(fail), []);
 
-  async function onGenerate(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    if (id) refresh(id);
+  }, [id, refresh]);
+
+  const stage = perf?.status.stage;
+  useEffect(() => {
+    if (!id || !stage || !RUNNING.has(stage)) return;
+    const t = setInterval(() => refresh(id), 1500);
+    return () => clearInterval(t);
+  }, [id, stage, refresh]);
+
+  async function onGenerate(req: GenerateRequest) {
     setError(null);
+    setPerf(null);
     try {
-      const r = await createPerformance({ title, story, language, duration_minutes: minutes });
+      const r = await createPerformance(req);
+      location.hash = r.id;
       setId(r.id);
-      setStatus(r.status);
-    } catch (err) {
-      setError(String(err));
+    } catch (e) {
+      fail(e);
     }
   }
 
+  const running = stage ? RUNNING.has(stage) : false;
+
   return (
-    <main style={{ maxWidth: 640, margin: "2rem auto", fontFamily: "sans-serif" }}>
+    <main>
       <h1>Harikatha</h1>
-      <form onSubmit={onGenerate} style={{ display: "grid", gap: 8 }}>
-        <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <textarea placeholder="Story" rows={6} value={story} onChange={(e) => setStory(e.target.value)} required />
-        <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-          <option value="en-IN">English</option>
-          <option value="hi-IN">Hindi</option>
-          <option value="te-IN">Telugu</option>
-          <option value="ta-IN">Tamil</option>
-          <option value="kn-IN">Kannada</option>
-        </select>
-        <label>
-          Duration (minutes){" "}
-          <input type="number" min={1} max={60} value={minutes} onChange={(e) => setMinutes(+e.target.value)} />
-        </label>
-        <button type="submit">Generate script</button>
-      </form>
+      <GenerateForm busy={running} onSubmit={onGenerate} />
+      {error && <p className="error">{error}</p>}
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {perf && (
+        <>
+          <div className="card">
+            <b>{perf.request.title}</b> · {perf.status.stage}
+            {perf.status.detail && ` (${perf.status.detail})`}
+            {perf.status.script_version && ` · script v${perf.status.script_version}`}
+            {perf.status.progress !== null && RUNNING.has(perf.status.stage) && (
+              <progress value={perf.status.progress} max={1} />
+            )}
+            {perf.status.stage === "error" && <p className="error">{perf.status.detail}</p>}
+            {perf.script && (
+              <div className="row">
+                <button disabled={running} onClick={() => render(perf.id).then(() => refresh(perf.id)).catch(fail)}>
+                  Render performance
+                </button>
+              </div>
+            )}
+          </div>
 
-      {id && status && (
-        <section>
-          <h2>Performance {id}</h2>
-          <p>Stage: <b>{status.stage}</b> {status.detail}</p>
-          <button onClick={() => render(id).then(setStatus).catch((e) => setError(String(e)))}>
-            Render performance
-          </button>
-          {status.stage === "done" && <audio controls src={`/api/v1/performances/${id}/audio?fmt=mp3`} />}
-        </section>
+          {perf.status.stage === "done" && perf.timeline && (
+            <>
+              <Player
+                id={perf.id}
+                files={perf.status.files ?? []}
+                timeline={perf.timeline}
+                onActive={setActiveId}
+                onDownloadJson={(n) => saveJson(n, n === "script" ? perf.script : perf.timeline)}
+              />
+              <RatingForm id={perf.id} />
+            </>
+          )}
+
+          {perf.script && (
+            <ScriptView
+              segments={perf.script.segments}
+              activeId={activeId}
+              editable={!running}
+              onSave={(sid, text) => editSegment(perf.id, sid, text).then(() => refresh(perf.id)).catch(fail)}
+            />
+          )}
+        </>
       )}
     </main>
   );
