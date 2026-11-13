@@ -93,6 +93,18 @@ def save_script(pid: str, script: dict, reason: str) -> int:
     return v
 
 
+def write_stage(pid: str, name: str, data: dict) -> None:
+    path = _dir(pid) / "stages" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(path, data)
+
+
+def update_meta(pid: str, **fields) -> None:
+    meta = read(pid, "meta.json")
+    meta.update(fields)
+    _write_json(_dir(pid) / "meta.json", meta)
+
+
 def list_ids() -> list[str]:
     root = settings.performances_dir
     return sorted(p.name for p in root.iterdir()) if root.exists() else []

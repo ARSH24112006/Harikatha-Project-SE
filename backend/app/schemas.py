@@ -11,10 +11,84 @@ class GenerateRequest(BaseModel):
     audience: str = "general"
 
 
+# --- pipeline artifacts -------------------------------------------------
+
+class StoryAnalysis(BaseModel):
+    characters: list[str]
+    events: list[str]
+    deity: str
+    bhava: str
+    moral: str
+
+
+class Slot(BaseModel):
+    type: Literal["shloka", "narration", "song"]
+    target_sec: float
+    target_chars: int
+    pace: float = 1.0
+
+
+class SectionBudget(BaseModel):
+    section: str
+    kind: Literal["invocation", "prastavana", "nirupana", "mangalam"]
+    target_sec: float
+    events: list[str] = []
+    slots: list[Slot]
+
+
+class Delivery(BaseModel):
+    pace: float = 1.0
+    gain_db: float = 0.0
+    melodic: bool = False
+    raga: str | None = None
+    tala: str | None = None
+    tempo_bpm: int | None = None
+    emphasis: list[tuple[int, int]] = []
+
+
+class Segment(BaseModel):
+    id: str
+    section: str
+    type: Literal["shloka", "narration", "song"]
+    text: str
+    origin: Literal["original", "traditional"] = "original"
+    source_ids: list[str] = []
+    target_sec: float
+    delivery: Delivery = Delivery()
+    scene: str | None = None
+    sfx: str | None = None
+
+
+class Script(BaseModel):
+    title: str
+    language: str
+    target_sec: float
+    segments: list[Segment]
+    content_notes: str = ""
+
+
+class SectionDraft(BaseModel):
+    section: str
+    segments: list[Segment]
+
+
+class CritiqueIssue(BaseModel):
+    segment_id: str
+    problem: str
+    fix_instruction: str
+
+
+class Critique(BaseModel):
+    ok: bool
+    issues: list[CritiqueIssue] = []
+
+
 class Status(BaseModel):
     stage: Literal[
         "analysing", "planning", "writing", "scripted", "queued",
         "synthesizing", "rewriting", "modulating", "mixing", "done", "error",
     ]
     detail: str = ""
+    progress: float | None = None
+    script_version: int | None = None
     updated_at: str

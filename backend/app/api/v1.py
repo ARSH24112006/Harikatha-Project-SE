@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from .. import store
+from .. import planner, store
 from ..config import settings
 from ..schemas import GenerateRequest
 
@@ -13,9 +13,9 @@ def health():
 
 
 @router.post("/performances", status_code=201)
-def create_performance(req: GenerateRequest):
+def create_performance(req: GenerateRequest, background: BackgroundTasks):
     pid = store.create(req)
-    # TODO: run stages 1-5 (analyse -> critique) as a background job
+    background.add_task(planner.run_script_job, pid)
     return {"id": pid, "status": store.read(pid, "status.json")}
 
 
