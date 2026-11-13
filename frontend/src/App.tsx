@@ -87,6 +87,7 @@ export default function App() {
                 id={perf.id}
                 files={perf.status.files ?? []}
                 timeline={perf.timeline}
+                credits={perf.credits}
                 onActive={setActiveId}
                 onDownloadJson={(n) => saveJson(n, n === "script" ? perf.script : perf.timeline)}
               />

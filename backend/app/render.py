@@ -1,19 +1,19 @@
 """Render job, stages 6-9 of WORKFLOW_AND_STORAGE.md s2.2.
 
-Modulation and mixing are placeholders (gain only; clips concatenated with short gaps).
-Pitch snapping, drone, scenes and ducking come later.
+Modulation is a placeholder (gain only); pitch snapping to a raga comes later.
+Mixing is in mixer.py: voice, drone, scene, cymbal pulse and bells, mastered to -16 LUFS.
 """
 import shutil
-import subprocess
 import time
 from array import array
 from concurrent.futures import ThreadPoolExecutor
 
-from . import audio, calibration, planner, store, tts
+import numpy as np
+
+from . import audio, calibration, mixer, planner, store, tts
 from .config import settings
 
 MAX_FIT_ROUNDS = 2
-GAP_SEC = 0.35
 
 
 def _synth_all(script: dict) -> tuple[dict[str, array], int]:
@@ -97,39 +97,32 @@ def run_render_job(pid: str) -> None:
         lap("modulate")
 
         store.write_status(pid, "mixing", progress=0.8)
-        mix, timeline, cursor = array("h"), [], 0.0
-        gap = array("h", [0] * round(GAP_SEC * rate))
-        rows = {r["id"]: r for r in _overruns(script, clips)}
-        for seg in script["segments"]:
-            samples = voiced[seg["id"]]
-            end = cursor + audio.duration(samples, rate)
-            timeline.append({
-                "id": seg["id"], "section": seg["section"], "type": seg["type"],
-                "start": round(cursor, 3), "end": round(end, 3), "audio": f"clips/{seg['id']}.wav",
-                "budget_sec": seg["target_sec"], "overrun": round(rows[seg["id"]]["overrun"], 3),
-            })
-            mix.extend(samples)
-            mix.extend(gap)
-            cursor = end + GAP_SEC
-        audio.write_wav(d / "performance.wav", mix, rate)
-        files = ["performance.wav"]
+        floats = {k: np.asarray(v, dtype=np.float32) / 32768 for k, v in voiced.items()}
+        result = mixer.build(script, floats, rate)
         if shutil.which("ffmpeg"):
-            subprocess.run(
-                ["ffmpeg", "-y", "-loglevel", "error", "-i", str(d / "performance.wav"),
-                 "-b:a", "192k", str(d / "performance.mp3")],
-                check=True,
-            )
-            files.append("performance.mp3")
-        store.write_stage(pid, "09_mix.json", {
-            "note": "placeholder: concatenation only", "gap_sec": GAP_SEC,
-            "peak": round(audio.peak(mix), 3), "mp3": "performance.mp3" in files,
-        })
+            loudness = mixer.master(result.samples, rate, d)
+        else:  # no ffmpeg: peak-normalised WAV only, no loudness target, no MP3
+            peak = float(np.abs(result.samples).max()) or 1.0
+            pcm = array("h", np.round(result.samples / peak * 0.89 * 32767).astype(np.int16).tolist())
+            audio.write_wav(d / "performance.wav", pcm, rate)
+            loudness = {"files": ["performance.wav"]}
+        files = loudness["files"]
+        total_sec = round(len(result.samples) / rate, 3)
+        store.write_stage(pid, "09_mix.json", {**result.recipe, "loudness": loudness})
+        store.write_json(pid, "credits.json", result.credits)
         lap("mix")
 
+        rows = {r["id"]: r for r in _overruns(script, clips)}
+        by_id = {s["id"]: s for s in script["segments"]}
+        timeline = [{
+            **t, "section": by_id[t["id"]]["section"], "type": by_id[t["id"]]["type"],
+            "audio": f"clips/{t['id']}.wav", "budget_sec": by_id[t["id"]]["target_sec"],
+            "overrun": round(rows[t["id"]]["overrun"], 3),
+        } for t in result.timeline]
         version = store.read(pid, "meta.json")["script_versions"][-1]["v"]
         store.write_json(pid, "timeline.json", {
-            "performance_id": pid, "sample_rate": rate, "voice_sa_hz": None,
-            "target_sec": script["target_sec"], "total_sec": round(audio.duration(mix, rate), 3),
+            "performance_id": pid, "sample_rate": rate, "voice_sa_hz": result.recipe["voice_f0_hz"],
+            "target_sec": script["target_sec"], "total_sec": total_sec,
             "script_version": version, "segments": timeline,
         })
         meta = store.read(pid, "meta.json")
@@ -137,6 +130,6 @@ def run_render_job(pid: str) -> None:
             pid, timings_sec={**meta["timings_sec"], **timings},
             tts_chars=sum(len(s["text"]) for s in script["segments"]), tts_cache_hits=cache_hits,
         )
-        store.write_status(pid, "done", progress=1.0, files=files, total_sec=round(audio.duration(mix, rate), 3))
+        store.write_status(pid, "done", progress=1.0, files=files, total_sec=total_sec)
     except Exception as e:  # noqa: BLE001 - surfaced to the UI via status.json
         store.write_status(pid, "error", f"{type(e).__name__}: {e}")

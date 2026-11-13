@@ -44,6 +44,7 @@ def get_performance(pid: str):
         "request": _get_or_404(pid),
         "script": store.read(pid, "script.json"),
         "timeline": store.read(pid, "timeline.json"),
+        "credits": store.read(pid, "credits.json") or [],
         "status": store.read(pid, "status.json"),
     }
 

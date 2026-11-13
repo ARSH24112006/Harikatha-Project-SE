@@ -23,11 +23,21 @@ export type Script = { title: string; language: string; target_sec: number; segm
 export type TimelineSegment = { id: string; start: number; end: number; overrun: number };
 export type Timeline = { total_sec: number; script_version: number; segments: TimelineSegment[] };
 
+export type Credit = {
+  file: string;
+  title: string | null;
+  author: string | null;
+  source: string | null;
+  licence: string | null;
+  requires_attribution: boolean;
+};
+
 export type Performance = {
   id: string;
   request: { title: string; story: string; language: string; duration_minutes: number };
   script: Script | null;
   timeline: Timeline | null;
+  credits: Credit[];
   status: Status;
 };
 

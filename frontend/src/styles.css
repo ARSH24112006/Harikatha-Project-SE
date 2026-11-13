@@ -16,3 +16,4 @@ textarea { width: 100%; box-sizing: border-box; }
 .error { color: crimson; }
 progress { width: 100%; display: block; margin-top: 6px; }
 audio { width: 100%; }
+.credits { font-size: 0.8rem; opacity: 0.8; }

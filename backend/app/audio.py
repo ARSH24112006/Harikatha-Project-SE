@@ -1,16 +1,21 @@
 """PCM16 mono WAV helpers (stdlib only)."""
+import os
+import threading
 import wave
 from array import array
 from pathlib import Path
 
 
 def write_wav(path: Path, samples: array, rate: int) -> None:
+    """Atomic: readers (e.g. parallel TTS threads sharing a cache entry) never see a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as w:
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with wave.open(str(tmp), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)
         w.writeframes(samples.tobytes())
+    tmp.replace(path)
 
 
 def read_wav(path: Path) -> tuple[array, int]:

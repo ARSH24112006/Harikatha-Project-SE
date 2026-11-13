@@ -2,6 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app import mixer
 from app.config import settings
 from app.main import app
 
@@ -73,7 +74,7 @@ def test_render_produces_timeline_and_audio(tmp_path, monkeypatch):
     assert status["stage"] == "done", status
     tl = client.get(f"/api/v1/performances/{pid}").json()["timeline"]
     assert tl["script_version"] == status["script_version"]
-    assert tl["segments"][0]["start"] == 0
+    assert tl["segments"][0]["start"] == mixer.PRE_ROLL  # drone and bell play first
     assert all(a["end"] < b["start"] for a, b in zip(tl["segments"], tl["segments"][1:]))
     assert client.get(f"/api/v1/performances/{pid}/audio?fmt=wav").status_code == 200
     assert client.get(f"/api/v1/performances/{pid}/clips/invocation.1").status_code == 200
@@ -87,7 +88,7 @@ def test_fit_round_shortens_overrunning_segments(tmp_path, monkeypatch):
     monkeypatch.setattr(tts, "MOCK_CHARS_PER_SEC", 1.0)  # far slower than budget -> overrun
     client.post(f"/api/v1/performances/{pid}/render")
     d = settings.performances_dir / pid
-    assert (d / "stages" / "07_fit_round1.json").exists()
+    assert (d / "stages" / "07_fit_round1.json").exists(), client.get(f"/api/v1/performances/{pid}/status").json()
     versions = [v["reason"] for v in json.loads((d / "meta.json").read_text())["script_versions"]]
     assert any(r.startswith("fit round 1") for r in versions)
 

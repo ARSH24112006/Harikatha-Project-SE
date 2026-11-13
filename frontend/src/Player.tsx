@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { audioUrl, type Timeline } from "./api";
+import { audioUrl, type Credit, type Timeline } from "./api";
 
 export default function Player({
   id,
   files,
   timeline,
+  credits,
   onActive,
   onDownloadJson,
 }: {
   id: string;
   files: string[];
   timeline: Timeline;
+  credits: Credit[];
   onActive: (segId: string | null) => void;
   onDownloadJson: (name: "script" | "timeline") => void;
 }) {
@@ -48,6 +50,20 @@ export default function Player({
         <button onClick={() => onDownloadJson("script")}>script.json</button>
         <button onClick={() => onDownloadJson("timeline")}>timeline.json</button>
       </div>
+      {credits.length > 0 && (
+        <p className="credits">
+          Sounds:{" "}
+          {credits.map((c, i) => (
+            <span key={c.file}>
+              {i > 0 && "; "}
+              <a href={c.source ?? undefined} target="_blank" rel="noreferrer">
+                {c.title}
+              </a>{" "}
+              by {c.author} ({c.licence})
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

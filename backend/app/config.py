@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
     sarvam_base_url: str = "https://api.sarvam.ai"
     data_dir: Path = Path(__file__).resolve().parent.parent / "data"
+    sounds_dir: Path = Path(__file__).resolve().parent.parent / "sounds"
 
     llm_model: str = "sarvam-105b"
     reasoning_effort: str = "low"  # analyse + critique
