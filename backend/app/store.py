@@ -93,6 +93,10 @@ def save_script(pid: str, script: dict, reason: str) -> int:
     return v
 
 
+def write_json(pid: str, name: str, data: dict) -> None:
+    _write_json(_dir(pid) / name, data)
+
+
 def write_stage(pid: str, name: str, data: dict) -> None:
     path = _dir(pid) / "stages" / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +107,13 @@ def update_meta(pid: str, **fields) -> None:
     meta = read(pid, "meta.json")
     meta.update(fields)
     _write_json(_dir(pid) / "meta.json", meta)
+
+
+def append_rating(rating: dict) -> None:
+    path = settings.data_dir / "runtime" / "evals" / "ratings.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as f:
+        f.write(json.dumps({**rating, "at": _now()}, ensure_ascii=False) + "\n")
 
 
 def list_ids() -> list[str]:

@@ -92,3 +92,17 @@ class Status(BaseModel):
     progress: float | None = None
     script_version: int | None = None
     updated_at: str
+
+
+class SegmentEdit(BaseModel):
+    text: str | None = None
+    delivery: dict | None = None
+
+
+class Rating(BaseModel):
+    rater_id: str
+    clarity: int = Field(ge=1, le=5)
+    musicality: int = Field(ge=1, le=5)
+    harikatha_feel: int = Field(ge=1, le=5)
+    fidelity: int = Field(ge=1, le=5)
+    comment: str = ""

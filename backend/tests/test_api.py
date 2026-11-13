@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.config import settings
@@ -54,3 +56,59 @@ def test_script_job_writes_stage_artifacts(tmp_path, monkeypatch):
     assert got["status"]["script_version"] == 1
     assert len(got["script"]["segments"]) == 1 + 1 + 3 * 3 + 1  # 6 min -> 3 nirupanas
     assert list((tmp_path / "runtime" / "llm_log").glob("*.jsonl"))
+
+
+def _scripted(tmp_path, monkeypatch, minutes=2):
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    r = client.post("/api/v1/performances", json={
+        "title": "G", "story": "An elephant is caught. Vishnu saves him.", "duration_minutes": minutes,
+    })
+    return r.json()["id"]
+
+
+def test_render_produces_timeline_and_audio(tmp_path, monkeypatch):
+    pid = _scripted(tmp_path, monkeypatch)
+    assert client.post(f"/api/v1/performances/{pid}/render").status_code == 202
+    status = client.get(f"/api/v1/performances/{pid}/status").json()
+    assert status["stage"] == "done", status
+    tl = client.get(f"/api/v1/performances/{pid}").json()["timeline"]
+    assert tl["script_version"] == status["script_version"]
+    assert tl["segments"][0]["start"] == 0
+    assert all(a["end"] < b["start"] for a, b in zip(tl["segments"], tl["segments"][1:]))
+    assert client.get(f"/api/v1/performances/{pid}/audio?fmt=wav").status_code == 200
+    assert client.get(f"/api/v1/performances/{pid}/clips/invocation.1").status_code == 200
+    assert client.get(f"/api/v1/performances/{pid}/clips/..%2Fstatus").status_code == 404
+
+
+def test_fit_round_shortens_overrunning_segments(tmp_path, monkeypatch):
+    from app import tts
+
+    pid = _scripted(tmp_path, monkeypatch)
+    monkeypatch.setattr(tts, "MOCK_CHARS_PER_SEC", 1.0)  # far slower than budget -> overrun
+    client.post(f"/api/v1/performances/{pid}/render")
+    d = settings.performances_dir / pid
+    assert (d / "stages" / "07_fit_round1.json").exists()
+    versions = [v["reason"] for v in json.loads((d / "meta.json").read_text())["script_versions"]]
+    assert any(r.startswith("fit round 1") for r in versions)
+
+
+def test_edit_segment_and_guards(tmp_path, monkeypatch):
+    pid = _scripted(tmp_path, monkeypatch)
+    url = f"/api/v1/performances/{pid}/segments/prastavana.1"
+    r = client.patch(url, json={"text": "new text", "delivery": {"pace": 0.9}})
+    assert r.status_code == 200 and r.json()["script_version"] == 2
+    assert client.get(f"/api/v1/performances/{pid}").json()["script"]["segments"][1]["text"] == "new text"
+    assert client.patch(url.replace("prastavana.1", "nope"), json={"text": "x"}).status_code == 404
+    rating = {"rater_id": "r1", "clarity": 4, "musicality": 3, "harikatha_feel": 4, "fidelity": 5}
+    assert client.post(f"/api/v1/performances/{pid}/ratings", json=rating).status_code == 201
+    assert client.post(f"/api/v1/performances/{pid}/ratings", json={**rating, "clarity": 9}).status_code == 422
+    assert (tmp_path / "runtime" / "evals" / "ratings.jsonl").exists()
+
+
+def test_render_requires_script(tmp_path, monkeypatch):
+    from app import store
+    from app.schemas import GenerateRequest
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    pid = store.create(GenerateRequest(title="t", story="s"))  # no job run -> still 'analysing'
+    assert client.post(f"/api/v1/performances/{pid}/render").status_code == 409

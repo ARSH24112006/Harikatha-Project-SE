@@ -1,8 +1,14 @@
+from typing import Literal
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import FileResponse
 
 from .. import planner, store
+from .. import render as renderer
 from ..config import settings
-from ..schemas import GenerateRequest
+from ..schemas import Delivery, GenerateRequest, Rating, SegmentEdit
+
+ACTIVE = {"analysing", "planning", "writing", "queued", "synthesizing", "rewriting", "modulating", "mixing"}
 
 router = APIRouter(prefix="/api/v1")
 
@@ -49,7 +55,56 @@ def get_status(pid: str):
 
 
 @router.post("/performances/{pid}/render", status_code=202)
-def render(pid: str):
+def render(pid: str, background: BackgroundTasks):
     _get_or_404(pid)
-    # TODO: run stages 6-9 as a background job
-    return store.write_status(pid, "queued")
+    status = store.read(pid, "status.json")
+    if store.read(pid, "script.json") is None or status["stage"] in ACTIVE:
+        raise HTTPException(409, f"cannot render while stage is '{status['stage']}'")
+    queued = store.write_status(pid, "queued", progress=0.0)
+    background.add_task(renderer.run_render_job, pid)
+    return queued
+
+
+@router.patch("/performances/{pid}/segments/{sid}")
+def edit_segment(pid: str, sid: str, edit: SegmentEdit):
+    _get_or_404(pid)
+    script = store.read(pid, "script.json")
+    status = store.read(pid, "status.json")
+    if script is None or status["stage"] in ACTIVE:
+        raise HTTPException(409, f"cannot edit while stage is '{status['stage']}'")
+    seg = next((s for s in script["segments"] if s["id"] == sid), None)
+    if seg is None:
+        raise HTTPException(404, "segment not found")
+    if edit.text is not None:
+        seg["text"] = edit.text
+    if edit.delivery is not None:
+        seg["delivery"] = Delivery.model_validate({**seg["delivery"], **edit.delivery}).model_dump(mode="json")
+    v = store.save_script(pid, script, f"user edit: {sid}")
+    store.write_status(pid, status["stage"], status["detail"], status["progress"])
+    return {"script_version": v, "segment": seg}
+
+
+@router.get("/performances/{pid}/audio")
+def get_audio(pid: str, fmt: Literal["mp3", "wav"] = "mp3"):
+    _get_or_404(pid)
+    path = settings.performances_dir / pid / f"performance.{fmt}"
+    if not path.exists():
+        raise HTTPException(404, f"no {fmt} audio yet")
+    return FileResponse(path, media_type="audio/mpeg" if fmt == "mp3" else "audio/wav")
+
+
+@router.get("/performances/{pid}/clips/{sid}")
+def get_clip(pid: str, sid: str):
+    _get_or_404(pid)
+    path = settings.performances_dir / pid / "clips" / f"{sid}.wav"
+    if not path.resolve().is_relative_to(path.parent.resolve()) or not path.exists():
+        raise HTTPException(404, "clip not found")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@router.post("/performances/{pid}/ratings", status_code=201)
+def add_rating(pid: str, rating: Rating):
+    _get_or_404(pid)
+    version = (store.read(pid, "status.json") or {}).get("script_version")
+    store.append_rating({**rating.model_dump(), "performance_id": pid, "script_version": version})
+    return {"ok": True}
